@@ -1,0 +1,16 @@
+{
+  "scan_id": "6d5342e4",
+  "target": "http://rest.vulnweb.com",
+  "started_at": "2026-01-20 12:43:39.767729",
+  "completed_at": "2026-01-20 12:43:50.802426",
+  "duration_seconds": 11.034687280654907,
+  "dry_run": false,
+  "total_files_scanned": 0,
+  "total_endpoints_discovered": 0,
+  "total_endpoints_verified": 0,
+  "endpoints": [],
+  "secrets": [],
+  "diff": null,
+  "errors": [],
+  "warnings": []
+}

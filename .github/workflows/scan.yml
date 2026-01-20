@@ -1,0 +1,172 @@
+# Shadow-API Mapper - Nightly Governance Scan
+# Runs automated API governance scans on a schedule
+
+name: Nightly API Governance Scan
+
+on:
+  schedule:
+    # Run daily at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL to scan'
+        required: true
+        type: string
+      spec_url:
+        description: 'OpenAPI spec URL (optional)'
+        required: false
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  governance-scan:
+    name: API Governance Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+      
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction
+      
+      - name: Install Playwright
+        run: poetry run playwright install chromium
+      
+      - name: Get target URL
+        id: target
+        run: |
+          if [ -n "${{ github.event.inputs.target_url }}" ]; then
+            echo "url=${{ github.event.inputs.target_url }}" >> $GITHUB_OUTPUT
+          else
+            # Use repository secret for scheduled runs
+            echo "url=${{ secrets.SCAN_TARGET_URL }}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Download OpenAPI spec (if provided)
+        if: github.event.inputs.spec_url != ''
+        run: |
+          curl -o openapi.yaml "${{ github.event.inputs.spec_url }}"
+      
+      - name: Run Shadow-API Mapper
+        run: |
+          SPEC_ARG=""
+          if [ -f "openapi.yaml" ]; then
+            SPEC_ARG="--spec openapi.yaml"
+          fi
+          
+          poetry run shadow-mapper scan "${{ steps.target.outputs.url }}" \
+            --output ./scan-output \
+            --sarif results.sarif \
+            $SPEC_ARG
+      
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+        if: always()
+      
+      - name: Upload scan artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-scan-${{ github.run_number }}
+          path: |
+            scan-output/
+            results.sarif
+          retention-days: 30
+        if: always()
+      
+      - name: Check for critical findings
+        id: check-findings
+        run: |
+          # Count shadow and zombie APIs
+          SHADOW_COUNT=$(cat scan-output/report.json | python -c "import json,sys; d=json.load(sys.stdin); print(len([e for e in d.get('endpoints',[]) if e.get('status')=='shadow']))" 2>/dev/null || echo "0")
+          ZOMBIE_COUNT=$(cat scan-output/report.json | python -c "import json,sys; d=json.load(sys.stdin); print(len([e for e in d.get('endpoints',[]) if e.get('status')=='zombie']))" 2>/dev/null || echo "0")
+          
+          echo "shadow_count=$SHADOW_COUNT" >> $GITHUB_OUTPUT
+          echo "zombie_count=$ZOMBIE_COUNT" >> $GITHUB_OUTPUT
+          
+          if [ "$SHADOW_COUNT" -gt 0 ] || [ "$ZOMBIE_COUNT" -gt 0 ]; then
+            echo "has_findings=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_findings=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create issue for new findings
+        if: steps.check-findings.outputs.has_findings == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const shadowCount = ${{ steps.check-findings.outputs.shadow_count }};
+            const zombieCount = ${{ steps.check-findings.outputs.zombie_count }};
+            
+            const title = `[Shadow-API Mapper] New findings detected - ${new Date().toISOString().split('T')[0]}`;
+            const body = `## API Governance Scan Results
+            
+            **Scan Date:** ${new Date().toISOString()}
+            **Target:** ${{ steps.target.outputs.url }}
+            
+            ### Findings Summary
+            
+            | Category | Count |
+            |----------|-------|
+            | Shadow APIs | ${shadowCount} |
+            | Zombie APIs | ${zombieCount} |
+            
+            ### Actions Required
+            
+            1. Review the attached SARIF file in the Security tab
+            2. Document any legitimate Shadow APIs in the OpenAPI spec
+            3. Deprecate or remove any Zombie APIs
+            
+            See the [workflow run](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}) for details.
+            `;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['security', 'api-governance', 'automated']
+            });
+      
+      - name: Notify Slack (optional)
+        if: steps.check-findings.outputs.has_findings == 'true' && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{
+              "text": "🚨 Shadow-API Mapper found new APIs",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*API Governance Alert*\n\n• Shadow APIs: ${{ steps.check-findings.outputs.shadow_count }}\n• Zombie APIs: ${{ steps.check-findings.outputs.zombie_count }}\n\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Scan Results>"
+                  }
+                }
+              ]
+            }' \
+            "$SLACK_WEBHOOK_URL"

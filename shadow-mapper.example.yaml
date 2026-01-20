@@ -1,0 +1,75 @@
+# Shadow-API Mapper Default Configuration
+# Copy this file to your project as shadow-mapper.yaml
+
+# Scope controls - IMPORTANT for authorized scanning only
+scope:
+  # Domains to allow scanning (supports wildcards)
+  # Leave empty to allow all (not recommended for production)
+  allowed_domains:
+    - "*.example.com"
+    - "api.example.com"
+  
+  # Domains to never scan (takes precedence over allowed)
+  blocked_domains:
+    - "localhost"
+    - "127.0.0.1"
+    - "0.0.0.0"
+    - "*.gov"
+    - "*.mil"
+    - "*.edu"
+
+# Rate limiting to avoid triggering WAF/DoS protections
+rate_limit:
+  requests_per_second: 10
+  burst: 20
+  backoff_multiplier: 2.0
+  max_backoff_seconds: 60
+
+# Harvester module configuration
+harvester:
+  browser_timeout: 30000  # milliseconds
+  wait_for_idle: true
+  extract_source_maps: true
+  wayback_months: 24
+  max_js_size_mb: 10.0
+
+# Parser module configuration
+parser:
+  languages:
+    - javascript
+    - typescript
+    - python
+  resolve_variables: true
+  max_resolution_depth: 10
+  detect_secrets: true
+
+# Prober module configuration
+prober:
+  timeout: 30  # seconds
+  follow_redirects: true
+  max_redirects: 5
+  verify_ssl: true
+  methods_to_test:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - PATCH
+  version_permutations: true
+  max_version: 5
+  user_agent: "ShadowMapper/1.0 (+https://github.com/villen/shadow-api-mapper)"
+
+# Auditor module configuration
+auditor:
+  spec_format: auto  # openapi3, openapi2, auto
+  generate_skeleton: true
+  redact_pii: true
+
+# Output configuration
+output:
+  format: sarif  # sarif, json, csv, html
+  output_dir: ./output
+  verbose: false
+
+# Dry run mode - set to true to preview without making requests
+dry_run: false
