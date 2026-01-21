@@ -127,6 +127,9 @@ jobs:
     name: Build Docker Image
     runs-on: ubuntu-latest
     needs: test
+    permissions:
+      contents: read
+      packages: write
     
     steps:
       - uses: actions/checkout@v4
@@ -134,18 +137,40 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: Build Docker image
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+      
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      
+      - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: false
-          tags: shadow-api-mapper:${{ github.sha }}
+          push: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
       - name: Test Docker image
         run: |
-          docker run --rm shadow-api-mapper:${{ github.sha }} --version
+          docker run --rm ghcr.io/${{ github.repository }}:${{ github.sha }} --version || \
+          docker run --rm shadow-api-mapper:latest --version
 
   # ==========================================
   # Security Scan (Optional)
@@ -175,9 +200,43 @@ jobs:
       - name: Install Playwright
         run: poetry run playwright install chromium
       
-      - name: Run Shadow-API Mapper
+      - name: Validate target URL
+        id: validate
         run: |
-          poetry run shadow-mapper scan "${{ github.event.inputs.target_url }}" \
+          TARGET="${{ github.event.inputs.target_url }}"
+          
+          # Security: Only allow http/https schemes
+          if [[ ! "$TARGET" =~ ^https?:// ]]; then
+            echo "::error::Invalid URL scheme. Only http:// and https:// are allowed."
+            exit 1
+          fi
+          
+          # Security: Block shell metacharacters to prevent command injection
+          if [[ "$TARGET" =~ [\;\|\&\$\`\(\)\{\}\<\>\!\#] ]]; then
+            echo "::error::URL contains invalid characters that could be used for command injection."
+            exit 1
+          fi
+          
+          # Security: Block file:// and other dangerous schemes
+          if [[ "$TARGET" =~ ^(file|ftp|data|javascript): ]]; then
+            echo "::error::Dangerous URL scheme detected."
+            exit 1
+          fi
+          
+          # Validate URL format (basic check for domain)
+          if [[ ! "$TARGET" =~ ^https?://[a-zA-Z0-9][-a-zA-Z0-9]*(\.[a-zA-Z0-9][-a-zA-Z0-9]*)+ ]]; then
+            echo "::error::Invalid URL format. Please provide a valid domain."
+            exit 1
+          fi
+          
+          echo "✓ URL validation passed: $TARGET"
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+      
+      - name: Run Shadow-API Mapper
+        env:
+          SCAN_TARGET: ${{ steps.validate.outputs.target }}
+        run: |
+          poetry run shadow-mapper scan "$SCAN_TARGET" \
             --output ./scan-output \
             --sarif results.sarif \
             --skip-wayback

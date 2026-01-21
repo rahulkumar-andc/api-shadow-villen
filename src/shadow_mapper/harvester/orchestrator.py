@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
@@ -9,6 +10,12 @@ from urllib.parse import urlparse
 from rich.console import Console
 
 from shadow_mapper.core.config import Settings
+from shadow_mapper.core.exceptions import (
+    BrowserHarvestError,
+    HarvestError,
+    SubdomainEnumerationError,
+    WaybackHarvestError,
+)
 from shadow_mapper.core.safety import ScopeEnforcer
 from shadow_mapper.harvester.browser import BrowserHarvester
 from shadow_mapper.harvester.archive import WaybackHarvester
@@ -81,9 +88,14 @@ class HarvesterOrchestrator:
                 
                 result.errors.extend(browser_result.errors)
                 
-        except Exception as e:
+        except BrowserHarvestError as e:
             result.errors.append(f"Browser harvest error: {str(e)}")
             console.print(f"  [red]Browser harvest failed: {e}[/red]")
+        except Exception as e:
+            # Log unexpected errors with stack trace
+            console.print(f"  [red]Unexpected browser error: {e}[/red]")
+            console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+            result.errors.append(f"Unexpected browser error: {str(e)}")
         
         # Step 2: Wayback Machine mining
         if include_wayback:
@@ -95,9 +107,13 @@ class HarvesterOrchestrator:
                 result.wayback_files.extend(wayback_result.downloaded_files)
                 result.errors.extend(wayback_result.errors)
                 
-            except Exception as e:
+            except WaybackHarvestError as e:
                 result.errors.append(f"Wayback harvest error: {str(e)}")
                 console.print(f"  [yellow]Wayback mining failed: {e}[/yellow]")
+            except Exception as e:
+                console.print(f"  [yellow]Unexpected Wayback error: {e}[/yellow]")
+                console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+                result.errors.append(f"Unexpected Wayback error: {str(e)}")
         
         # Step 3: Subdomain enumeration
         if enumerate_subdomains:
@@ -116,9 +132,13 @@ class HarvesterOrchestrator:
                     for subdomain in sorted(result.subdomains):
                         f.write(f"{subdomain}\n")
                 
-            except Exception as e:
+            except SubdomainEnumerationError as e:
                 result.errors.append(f"Subdomain enumeration error: {str(e)}")
                 console.print(f"  [yellow]Subdomain enumeration failed: {e}[/yellow]")
+            except Exception as e:
+                console.print(f"  [yellow]Unexpected subdomain error: {e}[/yellow]")
+                console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+                result.errors.append(f"Unexpected subdomain error: {str(e)}")
         
         # Calculate totals
         result.file_count = (

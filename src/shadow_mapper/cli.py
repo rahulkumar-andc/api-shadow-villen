@@ -9,8 +9,16 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 
 from shadow_mapper import __version__
@@ -323,16 +331,20 @@ def scan(
     dry_run: bool = typer.Option(False, "--dry-run/--no-dry-run", help="Dry run mode"),
     skip_wayback: bool = typer.Option(False, "--skip-wayback/--include-wayback", help="Skip Wayback Machine mining"),
     nuclei: bool = typer.Option(False, "--nuclei/--no-nuclei", help="Run Nuclei vulnerability scan"),
+    resume: bool = typer.Option(False, "--resume/--no-resume", help="Resume from last checkpoint if available"),
 ) -> None:
     """
     🔍 Execute full discovery pipeline (harvest → parse → probe → audit).
     
     This is the main command that runs all stages of the Shadow-API Mapper
     against a target and produces a comprehensive report.
+    
+    Use --resume to continue an interrupted scan from the last checkpoint.
     """
     import asyncio
     import json
     from shadow_mapper.core.orchestrator import FullScanOrchestrator
+    from shadow_mapper.core.checkpoint import CheckpointManager
     
     settings = Settings.from_file_or_default(config)
     settings.dry_run = dry_run
@@ -340,11 +352,29 @@ def scan(
     
     display_legal_disclaimer()
     
+    # Check for existing checkpoint if resume requested
+    if resume:
+        checkpoint_mgr = CheckpointManager(output)
+        if checkpoint_mgr.exists():
+            info = checkpoint_mgr.get_checkpoint_info()
+            if info:
+                console.print(Panel.fit(
+                    f"[bold yellow]Resuming scan:[/bold yellow]\\n"
+                    f"Scan ID: {info['scan_id']}\\n"
+                    f"Target: {info['target']}\\n"
+                    f"Last step: {info['last_completed_step']}\\n"
+                    f"Endpoints found: {info['endpoints_found']}",
+                    title="🔄 Resume Mode",
+                ))
+        else:
+            console.print("[yellow]No checkpoint found, starting fresh scan[/yellow]")
+    
     console.print(Panel.fit(
-        f"[bold cyan]Target:[/bold cyan] {target}\n"
-        f"[bold cyan]Output:[/bold cyan] {output}\n"
-        f"[bold cyan]Spec:[/bold cyan] {spec or 'None'}\n"
-        f"[bold cyan]Nuclei:[/bold cyan] {nuclei}",
+        f"[bold cyan]Target:[/bold cyan] {target}\\n"
+        f"[bold cyan]Output:[/bold cyan] {output}\\n"
+        f"[bold cyan]Spec:[/bold cyan] {spec or 'None'}\\n"
+        f"[bold cyan]Nuclei:[/bold cyan] {nuclei}\\n"
+        f"[bold cyan]Resume:[/bold cyan] {resume}",
         title="🔍 Full Scan Configuration",
     ))
     
@@ -364,6 +394,7 @@ def scan(
             spec_path=spec,
             include_wayback=not skip_wayback,
             run_nuclei=nuclei,
+            resume=resume,
         )
     
     scan_id = str(uuid.uuid4())[:8]
@@ -372,13 +403,58 @@ def scan(
     console.print(f"\n[cyan]Scan ID: {scan_id}[/cyan]")
     console.print(f"[cyan]Started: {started_at.isoformat()}[/cyan]\n")
     
+    # Create progress display with multiple stats
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
         console=console,
+        refresh_per_second=4,
     ) as progress:
-        task = progress.add_task("Running full scan...", total=None)
-        report = asyncio.run(run_full_scan())
+        # Add tasks for each pipeline step
+        harvest_task = progress.add_task("[cyan]Harvesting assets...", total=100)
+        parse_task = progress.add_task("[blue]Parsing files...", total=100, visible=False)
+        probe_task = progress.add_task("[green]Probing endpoints...", total=100, visible=False)
+        audit_task = progress.add_task("[yellow]Auditing spec...", total=100, visible=False)
+        
+        # Stats display
+        stats = {"files": 0, "endpoints": 0, "secrets": 0, "verified": 0}
+        
+        async def run_with_progress():
+            orchestrator = FullScanOrchestrator(settings)
+            
+            # Run the scan (orchestrator prints its own progress)
+            report = await orchestrator.run(
+                target=target,
+                spec_path=spec,
+                include_wayback=not skip_wayback,
+                run_nuclei=nuclei,
+                resume=resume,
+            )
+            
+            # Update stats from report
+            stats["files"] = report.total_files_scanned
+            stats["endpoints"] = report.total_endpoints_discovered
+            stats["secrets"] = len(report.secrets)
+            stats["verified"] = report.total_endpoints_verified
+            
+            return report
+        
+        # Simulate progress updates for visual feedback
+        progress.update(harvest_task, completed=30, description="[cyan]Harvesting assets...")
+        report = asyncio.run(run_with_progress())
+        
+        # Mark all complete
+        progress.update(harvest_task, completed=100)
+        progress.update(parse_task, completed=100, visible=True,
+                       description=f"[blue]Parsed {stats['files']} files")
+        progress.update(probe_task, completed=100, visible=True,
+                       description=f"[green]Probed {stats['verified']}/{stats['endpoints']} endpoints")
+        if spec:
+            progress.update(audit_task, completed=100, visible=True,
+                           description="[yellow]Audit complete")
     
     # Save report
     output.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,30 @@
+# Generated from pyproject.toml
+
+# Core
+python>=3.11
+
+# CLI
+typer[all]>=0.11.0
+click>=8.0.0,<8.2.0
+rich>=13.7.0
+
+# Data Models
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+
+# Networking
+httpx[http2]>=0.27.0
+anyio>=4.3.0
+
+# Browser Automation
+playwright>=1.42.0
+
+# Parsing
+tree-sitter>=0.21.0
+tree-sitter-javascript>=0.21.0
+tree-sitter-python>=0.21.0
+tree-sitter-typescript>=0.21.0
+
+# Utils
+pyyaml>=6.0.1
+structlog>=24.1.0  # Optional but recommended for structured logging

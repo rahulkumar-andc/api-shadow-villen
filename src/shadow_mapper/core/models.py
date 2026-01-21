@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class EndpointStatus(str, Enum):
@@ -139,8 +139,7 @@ class Endpoint(BaseModel):
         method_str = self.method.value if hasattr(self.method, 'value') else str(self.method)
         return f"{method_str}:{normalized}"
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class Secret(BaseModel):
