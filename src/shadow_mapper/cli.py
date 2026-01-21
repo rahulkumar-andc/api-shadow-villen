@@ -174,6 +174,26 @@ def parse(
 
 
 @app.command()
+def dashboard(
+    report: Path = typer.Argument(..., help="Path to JSON scan report"),
+    port: int = typer.Option(8000, help="Port to run dashboard on"),
+):
+    """📊 Launch the interactive web dashboard."""
+    from shadow_mapper.reports.dashboard import start_dashboard
+    start_dashboard(report, port=port)
+
+
+@app.command()
+def dashboard(
+    report: Path = typer.Argument(..., help="Path to JSON scan report"),
+    port: int = typer.Option(8000, help="Port to run dashboard on"),
+):
+    """📊 Launch the interactive web dashboard."""
+    from shadow_mapper.reports.dashboard import start_dashboard
+    start_dashboard(report, port=port)
+
+
+@app.command()
 def probe(
     endpoints: Path = typer.Argument(..., help="JSON file containing endpoints to probe"),
     output: Path = typer.Option(Path("./probe-results.json"), help="Output file for probe results"),
@@ -332,6 +352,7 @@ def scan(
     skip_wayback: bool = typer.Option(False, "--skip-wayback/--include-wayback", help="Skip Wayback Machine mining"),
     nuclei: bool = typer.Option(False, "--nuclei/--no-nuclei", help="Run Nuclei vulnerability scan"),
     resume: bool = typer.Option(False, "--resume/--no-resume", help="Resume from last checkpoint if available"),
+    fuzz: bool = typer.Option(False, "--fuzz/--no-fuzz", help="Enable shadow parameter fuzzing"),
 ) -> None:
     """
     🔍 Execute full discovery pipeline (harvest → parse → probe → audit).
@@ -374,6 +395,7 @@ def scan(
         f"[bold cyan]Output:[/bold cyan] {output}\\n"
         f"[bold cyan]Spec:[/bold cyan] {spec or 'None'}\\n"
         f"[bold cyan]Nuclei:[/bold cyan] {nuclei}\\n"
+        f"[bold cyan]Fuzzing:[/bold cyan] {fuzz}\\n"
         f"[bold cyan]Resume:[/bold cyan] {resume}",
         title="🔍 Full Scan Configuration",
     ))

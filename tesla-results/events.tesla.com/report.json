@@ -1,0 +1,16 @@
+{
+  "scan_id": "568ef247",
+  "target": "https://events.tesla.com",
+  "started_at": "2026-01-21 20:20:02.893426",
+  "completed_at": "2026-01-21 20:20:33.596870",
+  "duration_seconds": 30.70342445373535,
+  "dry_run": false,
+  "total_files_scanned": 0,
+  "total_endpoints_discovered": 0,
+  "total_endpoints_verified": 0,
+  "endpoints": [],
+  "secrets": [],
+  "diff": null,
+  "errors": [],
+  "warnings": []
+}

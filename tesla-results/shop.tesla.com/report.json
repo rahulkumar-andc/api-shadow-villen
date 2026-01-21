@@ -1,0 +1,16 @@
+{
+  "scan_id": "28f84b0e",
+  "target": "https://shop.tesla.com",
+  "started_at": "2026-01-21 20:20:02.893680",
+  "completed_at": "2026-01-21 20:20:06.174399",
+  "duration_seconds": 3.2807085514068604,
+  "dry_run": false,
+  "total_files_scanned": 0,
+  "total_endpoints_discovered": 0,
+  "total_endpoints_verified": 0,
+  "endpoints": [],
+  "secrets": [],
+  "diff": null,
+  "errors": [],
+  "warnings": []
+}
