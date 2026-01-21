@@ -1,6 +1,6 @@
 # 🕵️ Shadow-API Mapper
 
-[![CI/CD Pipeline](https://github.com/villen/shadow-api-mapper/actions/workflows/ci.yml/badge.svg)](https://github.com/villen/shadow-api-mapper/actions)
+[![CI/CD Pipeline](https://github.com/rahulkumar-andc/api-shadow-villen/actions/workflows/ci.yml/badge.svg)](https://github.com/rahulkumar-andc/api-shadow-villen/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
@@ -12,19 +12,19 @@
 
 ### 🔍 Discovery & Mapping
 - **Hybrid Analysis**: Combines source code parsing (JS, TS, Python) with live traffic harvesting.
+- **Bulk Scanning**: Concurrent scanning of 300+ subdomains with unified reporting (`shadow-mapper bulk`).
 - **GraphQL Detection**: Automatically detects GraphQL endpoints and introspects schemas.
-- **Fail-Closed Security**: Strict URL validation with RFC 1918 (SSRF) and cloud metadata protection.
 
 ### 🛡️ Security & Auditing
+- **Shadow Fuzzing**: Probes for hidden parameters (`?admin=true`) and mass assignment vulnerabilities.
 - **Secret Detection**: Enhanced entropy-based detection for API keys, tokens, and private keys.
-- **PII Redaction**: Luhn-validated credit card redaction and UUID-aware filtering.
-- **Rate Limit Caching**: Smart caching of 429 responses to avoid hammering targets.
+- **Fail-Closed Security**: Strict URL validation with RFC 1918 (SSRF) and cloud metadata protection.
 
 ### 📊 Observability & Reporting
-- **Live Progress**: Rich CLI dashboards with real-time file/endpoint statistics.
+- **Web Dashboard**: Interactive visual dashboard to explore endpoints and secrets.
+- **DevEx**: Pre-commit hooks to stop secrets from entering your codebase.
 - **Diff Mode**: Compare scans to track new, removed, and changed endpoints over time.
 - **HTML Reports**: Modern dark-mode reports with endpoint grids and finding summaries.
-- **Structured Logging**: JSON-formatted logs ready for SIEM ingestion.
 
 ---
 
@@ -34,7 +34,7 @@
 # Install with pip
 pip install shadow-api-mapper
 
-# Or with poetry
+# Or with poetry (Recommended)
 poetry install
 poetry run playwright install chromium
 ```
@@ -43,28 +43,35 @@ poetry run playwright install chromium
 
 ## 📖 Usage
 
-### Full Scan
+### 1. Full Scan (Single Target)
 Run a comprehensive discovery pipeline (Harvest → Parse → Probe → Audit):
 ```bash
 shadow-mapper scan "https://api.example.com" \
   --output ./results \
-  --secrets \
+  --fuzz \
   --html-report
 ```
 
-### Diff Scans
+### 2. Bulk Scan (Multiple Targets) 📦
+Scan a list of domains (e.g., from `subfinder` or `amass`):
+```bash
+shadow-mapper bulk ./domains.txt \
+  --output ./bulk-results \
+  --concurrency 5
+```
+
+### 3. Interactive Dashboard 📊
+Visualize your results in a local web interface:
+```bash
+shadow-mapper dashboard ./results/report.json
+```
+
+### 4. Diff Scans
 Compare a new scan against a previous baseline:
 ```bash
 shadow-mapper diff \
   --baseline ./results/report-old.json \
   --current ./results/report-new.json
-```
-
-### Docker
-```bash
-docker run --rm -v $(pwd)/results:/app/results \
-  ghcr.io/villen/shadow-api-mapper:latest \
-  scan "https://api.example.com" --output /app/results
 ```
 
 ---
@@ -83,10 +90,22 @@ scope:
 parser:
   languages: ["javascript", "typescript", "python"]
   detect_secrets: true
+```
 
-rate_limit:
-  requests_per_second: 10
-  burst: 20
+---
+
+## 🛡️ Pre-commit Hook
+
+ Prevent secrets from being committed by adding this to your `.pre-commit-config.yaml`:
+
+```yaml
+  - repo: local
+    hooks:
+      - id: shadow-mapper-secrets
+        name: Shadow API Secret Check 🕵️
+        entry: poetry run shadow-mapper parse
+        language: system
+        types: [file]
 ```
 
 ---
@@ -94,17 +113,6 @@ rate_limit:
 ## 🤝 Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on setting up your development environment.
-
-### Development Setup
-```bash
-poetry install
-poetry run pre-commit install
-```
-
-### Running Tests
-```bash
-poetry run pytest tests/
-```
 
 ---
 
