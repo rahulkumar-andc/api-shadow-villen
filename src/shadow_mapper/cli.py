@@ -341,6 +341,94 @@ def audit(
     console.print(table)
 
 
+
+@app.command()
+def bulk(
+    domains_file: Path = typer.Argument(..., help="File containing list of domains (one per line)"),
+    output_dir: Path = typer.Option(Path("./bulk-results"), "--output", "-o", help="Output directory"),
+    concurrency: int = typer.Option(3, help="Number of concurrent scans"),
+    config: Optional[Path] = typer.Option(None, help="Config file path"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Dry run mode (validates input)"),
+):
+    """📦 Run bulk scan on a list of domains from a file."""
+    import asyncio
+    import json
+    from shadow_mapper.core.bulk import BulkScanOrchestrator
+    
+    if not domains_file.exists():
+        console.print(f"[red]Error: Domain list '{domains_file}' not found[/red]")
+        raise typer.Exit(1)
+        
+    # Read domains
+    domains = [
+        line.strip() 
+        for line in domains_file.read_text().splitlines() 
+        if line.strip() and not line.startswith("#")
+    ]
+    
+    if not domains:
+        console.print("[red]Error: usage: No valid domains found in file[/red]")
+        raise typer.Exit(1)
+        
+    console.print(Panel.fit(
+        f"[bold cyan]Input:[/bold cyan] {domains_file} ({len(domains)} domains)\n"
+        f"[bold cyan]Output:[/bold cyan] {output_dir}\n"
+        f"[bold cyan]Concurrency:[/bold cyan] {concurrency}",
+        title="📦 Bulk Scan Configuration",
+    ))
+    
+    if dry_run:
+        console.print("[yellow]DRY RUN: Validated input file. Exiting.[/yellow]")
+        return
+
+    # Setup settings
+    settings = Settings.from_file_or_default(config)
+    settings.output.output_dir = output_dir
+    
+    async def run_bulk():
+        orchestrator = BulkScanOrchestrator(settings, domains, concurrency=concurrency)
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console
+        ) as progress:
+            results = await orchestrator.run(progress)
+            
+        # Generate master report
+        report = orchestrator.generate_master_report()
+        report_path = output_dir / "master-report.json"
+        
+        with open(report_path, "w") as f:
+            json.dump(report, f, indent=2)
+            
+        # Summary
+        success = report["summary"]["successful"]
+        failed = report["summary"]["failed"]
+        
+        console.print(f"\n[green]✓ Bulk scan complete![/green]")
+        console.print(f"  Successful: [green]{success}[/green]")
+        console.print(f"  Failed:     [red]{failed}[/red]")
+        console.print(f"  Report:     {report_path}")
+
+    try:
+        if asyncio.get_event_loop().is_running():
+             # If we are already in an event loop (e.g. running from script)
+             # this might fail with "This event loop is already running"
+             # But cli is entry point, so usually fine.
+             asyncio.run(run_bulk())
+        else:
+             asyncio.run(run_bulk())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted by user[/yellow]")
+    except Exception as e:
+        console.print(f"\n[red]Fatal error: {e}[/red]")
+        raise typer.Exit(1)
+
+
 @app.command()
 def scan(
     target: str = typer.Argument(..., help="Target URL to scan"),
