@@ -1,126 +1,233 @@
 # 🕵️ Shadow-API Mapper
 
-[![CI/CD Pipeline](https://github.com/rahulkumar-andc/api-shadow-villen/actions/workflows/ci.yml/badge.svg)](https://github.com/rahulkumar-andc/api-shadow-villen/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+**Automated Shadow and Zombie API Discovery Tool**
 
-**Shadow-API Mapper** is an advanced autonomous security agent designed to discover, map, and audit Shadow APIs and "Zombie" endpoints. It combines static analysis (AST-based secrets/endpoint detection) with dynamic analysis (browser-based harvesting and active probing).
+Shadow-API Mapper discovers hidden, undocumented, and deprecated API endpoints in your codebase using hybrid static + dynamic analysis.
 
----
-
-## ✨ Key Features
-
-### 🔍 Discovery & Mapping
-- **Hybrid Analysis**: Combines source code parsing (JS, TS, Python) with live traffic harvesting.
-- **Bulk Scanning**: Concurrent scanning of 300+ subdomains with unified reporting (`shadow-mapper bulk`).
-- **GraphQL Detection**: Automatically detects GraphQL endpoints and introspects schemas.
-
-### 🛡️ Security & Auditing
-- **Shadow Fuzzing**: Probes for hidden parameters (`?admin=true`) and mass assignment vulnerabilities.
-- **Secret Detection**: Enhanced entropy-based detection for API keys, tokens, and private keys.
-- **Fail-Closed Security**: Strict URL validation with RFC 1918 (SSRF) and cloud metadata protection.
-
-### 📊 Observability & Reporting
-- **Web Dashboard**: Interactive visual dashboard to explore endpoints and secrets.
-- **DevEx**: Pre-commit hooks to stop secrets from entering your codebase.
-- **Diff Mode**: Compare scans to track new, removed, and changed endpoints over time.
-- **HTML Reports**: Modern dark-mode reports with endpoint grids and finding summaries.
+[![CI](https://github.com/rahulkumar-andc/api-shadow-villen/actions/workflows/ci.yml/badge.svg)](https://github.com/rahulkumar-andc/api-shadow-villen/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 
 ---
 
-## 🚀 Installation
+## 🔍 What It Detects
+
+| Type | Description |
+|------|-------------|
+| **Shadow API** | Endpoint in code but NOT in your OpenAPI spec |
+| **Zombie API** | Deprecated endpoint that is still responding |
+| **Ghost API** | Documented in spec but not responding |
+| **Secret** | Hardcoded API keys, tokens, passwords in source |
+
+---
+
+## ⚡ Quick Start
 
 ```bash
-# Install with pip
-pip install shadow-api-mapper
-
-# Or with poetry (Recommended)
+# Install
+git clone https://github.com/rahulkumar-andc/api-shadow-villen.git
+cd api-shadow-villen
+pip install poetry
 poetry install
-poetry run playwright install chromium
+
+# Scan your local JS/TS/Python codebase
+poetry run shadow-mapper parse ./your-project --output results.json
+
+# View results
+cat results.json
 ```
 
 ---
 
-## 📖 Usage
+## 📦 Installation
 
-### 1. Full Scan (Single Target)
-Run a comprehensive discovery pipeline (Harvest → Parse → Probe → Audit):
+**Requirements:** Python 3.11+, Poetry
+
 ```bash
-shadow-mapper scan "https://api.example.com" \
-  --output ./results \
-  --fuzz \
-  --html-report
+pip install poetry
+poetry install
+poetry run playwright install chromium  # For browser-based harvesting
 ```
 
-### 2. Bulk Scan (Multiple Targets) 📦
-Scan a list of domains (e.g., from `subfinder` or `amass`):
+---
+
+## 🛠 Commands
+
+### `parse` — Scan Local Source Files (No Network)
 ```bash
-shadow-mapper bulk ./domains.txt \
+poetry run shadow-mapper parse ./src \
+  --output ./results.json \
+  --secrets \
+  --resolve
+```
+
+### `scan` — Full Pipeline (Harvest + Parse + Probe + Audit)
+```bash
+poetry run shadow-mapper scan https://your-target.com \
+  --output ./scan-output \
+  --sarif results.sarif \
+  --spec openapi.yaml
+```
+
+### `audit` — Compare Against OpenAPI Spec
+```bash
+poetry run shadow-mapper audit ./results.json \
+  --spec openapi.yaml \
+  --output audit-report.json \
+  --sarif results.sarif
+```
+
+### `dashboard` — Interactive Web UI
+```bash
+poetry run shadow-mapper dashboard ./scan-output/report.json --port 8000
+```
+
+### `probe` — Verify Endpoints Are Live
+```bash
+poetry run shadow-mapper probe ./results.json \
+  --output probe-results.json
+```
+
+### `bulk` — Scan Multiple Domains
+```bash
+# domains.txt — one domain per line
+poetry run shadow-mapper bulk domains.txt \
   --output ./bulk-results \
-  --concurrency 5
-```
-
-### 3. Interactive Dashboard 📊
-Visualize your results in a local web interface:
-```bash
-shadow-mapper dashboard ./results/report.json
-```
-
-### 4. Diff Scans
-Compare a new scan against a previous baseline:
-```bash
-shadow-mapper diff \
-  --baseline ./results/report-old.json \
-  --current ./results/report-new.json
+  --concurrency 3
 ```
 
 ---
 
-## 🛠️ Configuration
+## 🧪 Test It Right Now
 
-Configure behaviors via `shadow-mapper.yaml` or environment variables:
+```bash
+# 1. Create test JS file
+mkdir test-app
+cat > test-app/api.js << 'EOF'
+const API_KEY = "sk_live_realkey1234567890abcdef";
 
+fetch("/api/v1/users");
+axios.post("/api/v2/orders");
+fetch("/api/admin/secret");      // Shadow API candidate
+fetch("/api/v0/deprecated");     // Zombie API candidate
+EOF
+
+# 2. Run scan
+poetry run shadow-mapper parse ./test-app --output results.json
+
+# 3. See results
+python3 -c "
+import json
+d = json.load(open('results.json'))
+print(f'Endpoints: {len(d[\"endpoints\"])}')
+print(f'Secrets:   {len(d[\"secrets\"])}')
+for e in d['endpoints']:
+    print(f'  {e[\"method\"]} {e[\"url\"]}')
+"
+```
+
+---
+
+## ⚙️ Configuration
+
+Copy and edit the example config:
+```bash
+cp shadow-mapper.example.yaml shadow-mapper.yaml
+```
+
+Key settings:
 ```yaml
 scope:
-  allowed_domains: ["api.example.com", "*.example.com"]
-  blocked_domains: ["admin.example.com"]
-  allow_ip_addresses: false
-  ssrf_protection: true
+  allowed_domains:
+    - "*.your-domain.com"
+  blocked_domains:
+    - "localhost"
+
+rate_limit:
+  requests_per_second: 10
 
 parser:
-  languages: ["javascript", "typescript", "python"]
   detect_secrets: true
+  resolve_variables: true
+  ignore_paths:
+    - node_modules
+    - dist
+    - "*.test.js"
 ```
 
 ---
 
-## 🛡️ Pre-commit Hook
+## 🔗 CI/CD Integration
 
- Prevent secrets from being committed by adding this to your `.pre-commit-config.yaml`:
-
+### GitHub Actions
 ```yaml
+- name: Shadow API Scan
+  run: |
+    poetry run shadow-mapper parse ./src \
+      --output current.json
+
+    python scripts/check_new_shadows.py \
+      --baseline baseline.json \
+      --current current.json
+```
+
+### Pre-commit Hook
+```yaml
+# .pre-commit-config.yaml
+repos:
   - repo: local
     hooks:
       - id: shadow-mapper-secrets
-        name: Shadow API Secret Check 🕵️
+        name: Detect Hardcoded Secrets
         entry: poetry run shadow-mapper parse
+        args: ["./src", "--secrets", "--output", "/dev/null"]
         language: system
-        types: [file]
+        types_or: [javascript, typescript, python]
 ```
 
 ---
 
-## 🤝 Contributing
+## 📊 Output Formats
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on setting up your development environment.
+| Format | Description |
+|--------|-------------|
+| `JSON` | Machine-readable, full detail |
+| `SARIF` | GitHub Security tab integration |
+| `HTML` | Visual report, open in browser |
+| `CSV`  | Excel-compatible with risk scoring |
+
+---
+
+## 🏗 Project Structure
+
+```
+src/shadow_mapper/
+├── cli.py              # CLI entry point
+├── core/
+│   ├── config.py       # Settings management
+│   ├── models.py       # Data models
+│   ├── safety.py       # Scope enforcement, rate limiting
+│   ├── orchestrator.py # Full scan pipeline
+│   └── checkpoint.py   # Resumable scans
+├── harvester/          # Browser + Wayback Machine
+├── parser/             # Tree-sitter AST analysis
+├── prober/             # HTTP endpoint verification
+├── auditor/            # OpenAPI spec comparison
+└── reports/            # HTML, CSV, SARIF output
+```
 
 ---
 
 ## ⚠️ Legal Disclaimer
 
-**Shadow-API Mapper** is designed for defensive security research and authorized bug bounty hunting only.
-- 🔴 **Do not** scan targets without explicit permission.
-- 🔴 **Do not** use for illegal surveillance or harm.
-- 🔴 **Do not** share discovered vulnerabilities publicly without responsible disclosure.
+> This tool is for **authorized security testing only**.
+> Only test systems you own or have **explicit written permission** to test.
+> Unauthorized use may violate computer crime laws.
 
-The authors are not responsible for misuse of this tool. Use responsibly.
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE)
+
+Built by [VILLEN Security](https://github.com/rahulkumar-andc)
