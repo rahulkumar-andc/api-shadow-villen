@@ -1,4 +1,5 @@
 repos:
+  # ── Standard hooks ──────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
@@ -6,22 +7,49 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key         # catches obvious private keys
 
+  # ── Ruff linter + formatter ──────────────────────────────────
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.3.0
     hooks:
       - id: ruff
-        args: [ --fix ]
+        args: [--fix]
       - id: ruff-format
 
+  # ── Shadow-API Mapper hooks ───────────────────────────────────
   - repo: local
     hooks:
+      # 1. Detect hardcoded secrets in staged JS/TS/PY files
       - id: shadow-mapper-secrets
-        name: Shadow API Secret Check 🕵️
+        name: "🔐 Detect hardcoded secrets"
         entry: poetry run shadow-mapper parse
         language: system
-        types: [file]
         types_or: [javascript, python, typescript]
         pass_filenames: false
-        args: ["./src", "--secrets", "--output", "./scan-results/pre-commit.json"]
-        description: "Scans staged files for hardcoded secrets and shadow API endpoints."
+        args:
+          - "./src"
+          - "--secrets"
+          - "--no-resolve"
+          - "--output"
+          - "/tmp/shadow-secrets-check.json"
+        description: "Scans staged source files for hardcoded API keys and tokens."
+
+      # 2. Diff check — fail if new shadow APIs appear vs saved baseline
+      #    Run manually: pre-commit run shadow-mapper-diff
+      - id: shadow-mapper-diff
+        name: "🕵️ New shadow API check"
+        entry: python scripts/check_new_shadows.py
+        language: system
+        pass_filenames: false
+        stages: [manual]          # only runs when explicitly called
+        args:
+          - "--baseline"
+          - "baseline.json"
+          - "--source"
+          - "./src"
+        description: >
+          Compares current parse results against baseline.json.
+          Run: pre-commit run shadow-mapper-diff --hook-stage manual

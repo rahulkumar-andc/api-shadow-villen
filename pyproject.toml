@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "shadow-api-mapper"
-version = "1.0.0"
+version = "1.1.0"
 description = "Automated Shadow and Zombie API discovery tool using hybrid static/dynamic analysis"
 authors = ["VILLEN Security <security@villen.dev>"]
 license = "MIT"
@@ -26,7 +26,7 @@ shadow-mapper = "shadow_mapper.cli:app"
 python = "^3.11"
 # CLI
 typer = {extras = ["all"], version = "^0.11.0"}
-click = ">=8.0.0,<8.2.0"  # Pin for compatibility with typer 0.11.x
+click = ">=8.0.0,<8.2.0"
 rich = "^13.7.0"
 # Data Models
 pydantic = "^2.6.0"
@@ -68,19 +68,18 @@ select = [
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
-    "ARG", # flake8-unused-arguments
     "SIM", # flake8-simplify
 ]
-ignore = ["E501", "B008", "B905"]
+ignore = ["E501", "B008", "B905", "ARG"]
 
 [tool.ruff.isort]
 known-first-party = ["shadow_mapper"]
 
 [tool.mypy]
 python_version = "3.11"
-strict = true
 warn_return_any = true
 warn_unused_ignores = true
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

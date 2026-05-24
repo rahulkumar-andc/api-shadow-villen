@@ -1,15 +1,17 @@
-# Shadow-API Mapper Default Configuration
-# Copy this file to your project as shadow-mapper.yaml
+# Shadow-API Mapper Configuration
+# Copy this file: cp shadow-mapper.example.yaml shadow-mapper.yaml
 
-# Scope controls - IMPORTANT for authorized scanning only
+# ============================================================
+# SCOPE — which domains to allow/block
+# ============================================================
 scope:
-  # Domains to allow scanning (supports wildcards)
-  # Leave empty to allow all (not recommended for production)
+  # Domains to allow (wildcards supported)
+  # Leave empty = allow all (not recommended)
   allowed_domains:
     - "*.example.com"
     - "api.example.com"
-  
-  # Domains to never scan (takes precedence over allowed)
+
+  # Domains to NEVER scan (blocklist takes precedence)
   blocked_domains:
     - "localhost"
     - "127.0.0.1"
@@ -18,34 +20,66 @@ scope:
     - "*.mil"
     - "*.edu"
 
-# Rate limiting to avoid triggering WAF/DoS protections
+# ============================================================
+# RATE LIMITING — avoid WAF/DoS triggers
+# ============================================================
 rate_limit:
   requests_per_second: 10
   burst: 20
   backoff_multiplier: 2.0
   max_backoff_seconds: 60
 
-# Harvester module configuration
+# ============================================================
+# HARVESTER — browser automation settings
+# ============================================================
 harvester:
-  browser_timeout: 30000  # milliseconds
-  wait_for_idle: true
-  extract_source_maps: true
-  wayback_months: 24
-  max_js_size_mb: 10.0
+  browser_timeout: 30000     # ms — page load timeout
+  wait_for_idle: true        # wait for network idle
+  extract_source_maps: true  # download .map files
+  wayback_months: 24         # months of Wayback history
+  max_js_size_mb: 10.0       # skip files larger than this
+  headless: true             # run browser headlessly
 
-# Parser module configuration
+# ============================================================
+# PARSER — static analysis settings
+# ============================================================
 parser:
   languages:
     - javascript
     - typescript
     - python
-  resolve_variables: true
+  resolve_variables: true       # resolve BASE_URL + "/path"
   max_resolution_depth: 10
   detect_secrets: true
 
-# Prober module configuration
+  # Directories to skip during parsing
+  ignore_paths:
+    - node_modules
+    - __pycache__
+    - dist
+    - build
+    - .next
+    - .nuxt
+    - coverage
+    - "*.test.js"
+    - "*.spec.ts"
+
+  # Known fake/placeholder values — skip as secrets
+  secret_allowlist:
+    - "your-api-key-here"
+    - "xxxxxxxxxxxx"
+    - "placeholder"
+    - "changeme"
+    - "example_key"
+    - "YOUR_SECRET_KEY"
+    - "INSERT_KEY_HERE"
+    - "your_token_here"
+
+# ============================================================
+# PROBER — HTTP verification settings
+# ============================================================
 prober:
-  timeout: 30  # seconds
+  timeout: 30                # seconds per request
   follow_redirects: true
   max_redirects: 5
   verify_ssl: true
@@ -55,21 +89,32 @@ prober:
     - PUT
     - DELETE
     - PATCH
-  version_permutations: true
+  version_permutations: true  # test /v1/, /v2/ etc.
   max_version: 5
   user_agent: "ShadowMapper/1.0 (+https://github.com/villen/shadow-api-mapper)"
 
-# Auditor module configuration
+# ============================================================
+# AUDITOR — OpenAPI spec comparison
+# ============================================================
 auditor:
-  spec_format: auto  # openapi3, openapi2, auto
-  generate_skeleton: true
-  redact_pii: true
+  spec_format: auto          # openapi3, openapi2, auto
+  generate_skeleton: true    # generate spec for shadow APIs
+  redact_pii: true           # redact PII in reports
 
-# Output configuration
+# ============================================================
+# OUTPUT — report formats and location
+# ============================================================
 output:
-  format: sarif  # sarif, json, csv, html
+  format: json               # primary: sarif, json, csv, html
   output_dir: ./output
   verbose: false
 
-# Dry run mode - set to true to preview without making requests
-dry_run: false
+  # Generate these extra formats alongside primary
+  extra_formats:
+    - html                   # visual report for browser
+    - csv                    # Excel-compatible with risk scoring
+
+# ============================================================
+# GLOBAL
+# ============================================================
+dry_run: false               # true = preview only, no requests

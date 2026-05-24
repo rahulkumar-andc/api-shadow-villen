@@ -532,3 +532,91 @@ def scan(
 
 if __name__ == "__main__":
     app()
+
+
+@app.command()
+def diff(
+    baseline: Path = typer.Argument(..., help="Baseline scan report (JSON)"),
+    current: Path = typer.Argument(..., help="Current scan report (JSON)"),
+    output: Optional[Path] = typer.Option(None, help="Save diff report to JSON file"),
+    fail_on_new: bool = typer.Option(True, "--fail-on-new/--no-fail", help="Exit code 1 if new APIs found"),
+) -> None:
+    """
+    🔄 Compare two scan reports and show what changed.
+
+    Useful in CI to detect when new shadow APIs appear between runs.
+
+    Example:
+        shadow-mapper diff baseline.json current.json
+    """
+    import json
+    from shadow_mapper.core.diff import compare_scans, format_diff_summary
+
+    for p in (baseline, current):
+        if not p.exists():
+            console.print(f"[red]Error: File not found: {p}[/red]")
+            raise typer.Exit(1)
+
+    base_data    = json.loads(baseline.read_text())
+    current_data = json.loads(current.read_text())
+
+    scan_diff = compare_scans(base_data, current_data)
+
+    # Pretty print summary
+    console.print()
+    console.print(Panel.fit(
+        f"[cyan]Baseline:[/cyan]  {baseline.name}  "
+        f"([dim]{base_data.get('scan_id','?')}[/dim])\n"
+        f"[cyan]Current:[/cyan]   {current.name}  "
+        f"([dim]{current_data.get('scan_id','?')}[/dim])",
+        title="🔄 Scan Diff",
+    ))
+
+    table = Table(title="Changes")
+    table.add_column("Category", style="cyan")
+    table.add_column("Count", justify="right")
+    table.add_column("", style="bold")
+
+    added   = len(scan_diff.endpoints.added)
+    removed = len(scan_diff.endpoints.removed)
+    changed = len(scan_diff.endpoints.changed)
+    unchanged = len(scan_diff.endpoints.unchanged)
+
+    table.add_row("New endpoints",     str(added),     "[red]⚠[/red]" if added else "[green]✓[/green]")
+    table.add_row("Removed endpoints", str(removed),   "[yellow]↓[/yellow]" if removed else "[green]✓[/green]")
+    table.add_row("Changed endpoints", str(changed),   "[yellow]~[/yellow]" if changed else "[green]✓[/green]")
+    table.add_row("Unchanged",         str(unchanged), "")
+
+    if scan_diff.secrets_added:
+        table.add_row("New secrets", str(scan_diff.secrets_added), "[red]🔐[/red]")
+
+    console.print(table)
+
+    if scan_diff.endpoints.added:
+        console.print("\n[bold red]New endpoints:[/bold red]")
+        for ep in scan_diff.endpoints.added[:20]:
+            console.print(f"  [red]+[/red] {ep.get('method','GET')} {ep.get('url','')}")
+        if len(scan_diff.endpoints.added) > 20:
+            console.print(f"  [dim]... and {len(scan_diff.endpoints.added) - 20} more[/dim]")
+
+    if scan_diff.endpoints.removed:
+        console.print("\n[bold yellow]Removed endpoints:[/bold yellow]")
+        for ep in scan_diff.endpoints.removed[:10]:
+            console.print(f"  [yellow]-[/yellow] {ep.get('method','GET')} {ep.get('url','')}")
+
+    # Save diff report
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w") as f:
+            json.dump(scan_diff.to_dict(), f, indent=2)
+        console.print(f"\n[green]✓ Diff report saved: {output}[/green]")
+
+    # Exit code for CI
+    has_issues = added > 0 or scan_diff.secrets_added > 0
+    if has_issues and fail_on_new:
+        console.print("\n[bold red]❌ CI check FAILED — new shadow APIs or secrets detected[/bold red]")
+        raise typer.Exit(1)
+    elif has_issues:
+        console.print("\n[yellow]⚠ New APIs detected (not failing — --no-fail set)[/yellow]")
+    else:
+        console.print("\n[bold green]✅ CI check PASSED — no new shadow APIs[/bold green]")
